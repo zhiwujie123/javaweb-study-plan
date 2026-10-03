@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学习管理系统</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon">📚</span>
+        <div class="brand-text">
+          <span class="brand-name">学习管理系统</span>
+          <span class="brand-sub">LMS · 个人学习中心</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <a href="#/dashboard" data-route="dashboard"><span class="nav-icon">🏠</span>学习中心</a>
+        <a href="#/courses" data-route="courses"><span class="nav-icon">📖</span>全部课程</a>
+        <a href="#/stats" data-route="stats"><span class="nav-icon">📊</span>学习统计</a>
+        <a href="#/todos" data-route="todos"><span class="nav-icon">✅</span>学习计划</a>
+        <a href="#/notes" data-route="notes"><span class="nav-icon">📝</span>我的笔记</a>
+        <a href="#/settings" data-route="settings"><span class="nav-icon">⚙️</span>设置</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <span class="avatar" id="userAvatar">学</span>
+          <div class="user-info">
+            <span class="user-name" id="userName">学习者</span>
+            <span class="user-streak" id="userStreak">🔥 连续打卡 0 天</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <main class="main" id="main">
+      <!-- 各页面由 app.js 渲染 -->
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
