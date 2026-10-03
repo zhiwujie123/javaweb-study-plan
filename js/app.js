@@ -30,11 +30,30 @@
   function resetAll() {
     localStorage.removeItem(STORE_KEY);
     state = loadState();
+    ensureJavawebSeed();
     save();
   }
 
+  /* JavaWeb 课程一次性迁移：把 P1~34 补记为已学、初始化测验成绩容器，
+     并把「继续学习」指向第一个未完成的集数。老数据（进度/笔记/待办）不受影响 */
+  function ensureJavawebSeed() {
+    if (state.jwSeeded || !window.JW_COURSE) return;
+    const until = window.JW_LEARNED_UNTIL_P || 0;
+    let firstUndone = null;
+    window.JW_COURSE.chapters.forEach(ch => ch.lessons.forEach(l => {
+      if (l.p <= until && !(state.progress[l.id] && state.progress[l.id].completed)) {
+        state.progress[l.id] = { completed: true, completedAt: Date.now() };
+      }
+      if (!firstUndone && !isDone(l.id)) firstUndone = l.id;
+    }));
+    if (!state.quizScores) state.quizScores = {};
+    if (firstUndone) state.lastLessonId = firstUndone;
+    state.jwSeeded = true;
+  }
+
   /* ---------- 工具函数 ---------- */
-  const courses = () => window.SEED_COURSES;
+  /* JavaWeb 全程课排在第一位：首页「继续学习」、进度统计默认围绕它展开 */
+  const courses = () => [window.JW_COURSE].concat(window.SEED_COURSES);
 
   function escapeHtml(str) {
     return String(str)
@@ -197,7 +216,7 @@
   }
 
   /* ---------- UI 临时状态 ---------- */
-  const ui = { category: '全部', keyword: '', noteDraft: {} };
+  const ui = { category: '全部', keyword: '', noteDraft: {}, quizGroup: null, quizAnswers: {} };
 
   /* ---------- 路由 ---------- */
   function route() {
@@ -212,6 +231,7 @@
       else if (page === 'courses') renderCourses(main);
       else if (page === 'course' && parts[1]) renderCourseDetail(main, parts[1]);
       else if (page === 'lesson' && parts[1] && parts[2]) renderLesson(main, parts[1], parts[2]);
+      else if (page === 'quiz') parts[1] ? renderQuizRun(main, parts[1]) : renderQuizList(main);
       else if (page === 'stats') renderStats(main);
       else if (page === 'todos') renderTodos(main);
       else if (page === 'notes') renderNotes(main);
@@ -462,7 +482,7 @@
         ${c.chapters.map((ch, ci) => `
         <div class="chapter ${ci === 0 || ch.lessons.some(l => !isDone(l.id)) ? 'open' : ''}">
           <div class="chapter-head" data-action="toggle-chapter">
-            <span style="color:var(--accent)">第${['一', '二', '三', '四', '五'][ci] || ci + 1}章</span>
+            <span style="color:var(--accent)">第${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三'][ci] || ci + 1}章</span>
             <span>${escapeHtml(ch.title)}</span>
             <span style="font-size:12px;color:var(--text-3);font-weight:400">${ch.lessons.filter(l => isDone(l.id)).length}/${ch.lessons.length} 已学</span>
             <span class="arrow">▶</span>
@@ -514,6 +534,7 @@
               <button class="btn ${done ? 'btn-ghost' : 'btn-green'}" data-action="toggle-done" data-lesson="${lesson.id}">
                 ${done ? '↩ 已学完（点击撤销）' : '✓ 标记为已学完 (+' + lesson.duration + '分钟)'}
               </button>
+              ${lesson.url ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${lesson.url}">▶ 在 B 站观看本集</a>` : ''}
               <div class="lesson-nav">
                 ${prev ? `<a class="btn btn-ghost" href="#/lesson/${c.id}/${prev.lesson.id}">← 上一课</a>` : ''}
                 ${next ? `<a class="btn btn-ghost" href="#/lesson/${c.id}/${next.lesson.id}">下一课 →</a>`
@@ -684,6 +705,114 @@
     `;
   }
 
+  /* ---------- 页面：习题测验 ---------- */
+  const QUIZ_LETTERS = ['A', 'B', 'C', 'D'];
+  function quizGroups() { return window.JW_QUIZ || []; }
+  function quizGroup(id) { return quizGroups().find(g => g.id === id); }
+  function bestScore(id) {
+    return (state.quizScores && state.quizScores[id]) || null;
+  }
+  function quizScoreOf(group, answers) {
+    return group.questions.reduce((s, q, i) => s + (answers[i] === q.answer ? 1 : 0), 0);
+  }
+
+  function renderQuizList(main) {
+    const groups = quizGroups();
+    const totalQ = groups.reduce((s, g) => s + g.questions.length, 0);
+    const doneBest = groups.filter(g => bestScore(g.id)).length;
+
+    main.innerHTML = `
+      <div class="page-head">
+        <div>
+          <div class="page-title">习题测验</div>
+          <div class="page-desc">《JavaWeb 全程课》随学随测 · ${groups.length} 个模块 ${totalQ} 道题 · 已测 ${doneBest} 个模块</div>
+        </div>
+      </div>
+      <div class="quiz-grid">
+        ${groups.map(g => {
+          const best = bestScore(g.id);
+          const pct = best ? Math.round(best.score / best.total * 100) : null;
+          return `<div class="quiz-card ${best ? 'tested' : ''}" data-action="goto" data-hash="#/quiz/${g.id}">
+            <div class="quiz-card-head">
+              <span class="quiz-card-name">${escapeHtml(g.title)}</span>
+              <span class="score-badge ${pct === 100 ? 'full' : ''}">${best ? '最佳 ' + pct + '%' : '未测试'}</span>
+            </div>
+            <div class="quiz-card-meta">${g.questions.length} 道题 · 单选 + 判断 · 附答案解析</div>
+            <div class="quiz-card-foot">
+              <span>历史最佳：${best ? best.score + ' / ' + best.total : '—'}</span>
+              <span class="quiz-go">开始答题 →</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function renderQuizRun(main, groupId) {
+    const g = quizGroup(groupId);
+    if (!g) { location.hash = '#/quiz'; return; }
+    if (ui.quizGroup !== groupId) { ui.quizGroup = groupId; ui.quizAnswers = {}; }
+
+    const answers = ui.quizAnswers;
+    const total = g.questions.length;
+    const picked = Object.keys(answers).length;
+    const score = quizScoreOf(g, answers);
+    const finished = picked === total;
+    const best = bestScore(g.id);
+    const pct = total ? Math.round(score / total * 100) : 0;
+
+    const qHtml = g.questions.map((q, i) => {
+      const pick = answers[i];
+      const answered = pick !== undefined;
+      const opts = q.options.map((o, j) => {
+        let cls = 'quiz-opt';
+        if (answered) {
+          if (j === q.answer) cls += ' correct';
+          else if (j === pick) cls += ' wrong';
+          else cls += ' dim';
+        }
+        const letter = q.options.length > 2 ? '<span class="opt-letter">' + QUIZ_LETTERS[j] + '</span>' : '';
+        return `<button class="${cls}" data-action="quiz-pick" data-q="${i}" data-o="${j}" ${answered ? 'disabled' : ''}>${letter}${escapeHtml(o)}</button>`;
+      }).join('');
+      const ansText = q.options.length > 2 ? QUIZ_LETTERS[q.answer] : q.options[q.answer];
+      return `<div class="quiz-q">
+        <div class="quiz-q-title"><span class="quiz-q-no">${i + 1}</span>${escapeHtml(q.q)}</div>
+        <div class="quiz-opts">${opts}</div>
+        ${answered ? `<div class="quiz-explain ${pick === q.answer ? 'ok' : 'no'}">
+          ${pick === q.answer ? '✓ 回答正确' : '✗ 回答错误，正确答案：' + escapeHtml(ansText)} · ${escapeHtml(q.explain)}
+        </div>` : ''}
+      </div>`;
+    }).join('');
+
+    let summary = '';
+    if (finished) {
+      const msg = pct === 100 ? '全部正确，太棒了！🎉' : pct >= 80 ? '掌握得不错，继续保持！' : pct >= 60 ? '基本掌握，建议复习错题解析' : '建议回看本章视频后再来一次';
+      const isBest = !best || score >= best.score;
+      summary = `<div class="quiz-summary ${pct >= 80 ? 'good' : ''}">
+        <div class="quiz-score">${score}<span> / ${total}</span></div>
+        <div class="quiz-summary-text">正确率 ${pct}% · ${msg}${isBest ? ' · 已刷新最佳成绩' : ''}</div>
+        <div class="row">
+          <button class="btn btn-primary" data-action="quiz-restart">↺ 重新测试</button>
+          <a class="btn btn-ghost" href="#/quiz">返回列表</a>
+        </div>
+      </div>`;
+    }
+
+    main.innerHTML = `
+      <div class="breadcrumb"><a href="#/dashboard">学习中心</a> / <a href="#/quiz">习题测验</a> / ${escapeHtml(g.title)}</div>
+      <div class="card quiz-run-head">
+        <div>
+          <div class="card-title">${escapeHtml(g.title)}</div>
+          <div class="quiz-run-meta">已答 ${picked} / ${total} · 当前得分 ${score}${best ? ` · 历史最佳 ${best.score} / ${best.total}` : ''}</div>
+          <div class="progress-track" style="margin-top:8px"><div class="progress-fill ${finished ? 'full' : ''}" style="width:${Math.round(picked / total * 100)}%"></div></div>
+        </div>
+        <a class="btn btn-ghost btn-sm" href="#/quiz">← 返回列表</a>
+      </div>
+      ${summary}
+      <div class="quiz-list">${qHtml}</div>
+    `;
+  }
+
   /* ---------- 页面：设置 ---------- */
   function renderSettings(main) {
     main.innerHTML = `
@@ -794,6 +923,23 @@
       save();
       toast('设置已保存');
       route();
+    } else if (action === 'quiz-pick') {
+      const g = quizGroup(ui.quizGroup);
+      if (!g) return;
+      const qi = Number(el.dataset.q), oi = Number(el.dataset.o);
+      if (ui.quizAnswers[qi] !== undefined) return;
+      ui.quizAnswers[qi] = oi;
+      if (Object.keys(ui.quizAnswers).length === g.questions.length) {
+        const score = quizScoreOf(g, ui.quizAnswers);
+        state.quizScores = state.quizScores || {};
+        const prev = state.quizScores[ui.quizGroup];
+        if (!prev || score > prev.score) state.quizScores[ui.quizGroup] = { score, total: g.questions.length, at: Date.now() };
+        save();
+      }
+      route();
+    } else if (action === 'quiz-restart') {
+      ui.quizAnswers = {};
+      route();
     } else if (action === 'export-data') {
       exportData();
     } else if (action === 'import-data') {
@@ -826,6 +972,7 @@
         const obj = JSON.parse(reader.result);
         if (obj && obj.progress && obj.settings) {
           state = obj;
+          ensureJavawebSeed();
           save();
           toast('数据导入成功');
           route();
@@ -852,6 +999,7 @@
 
   /* ---------- 启动 ---------- */
   window.addEventListener('hashchange', route);
+  ensureJavawebSeed();
   save();
   route();
 })();
